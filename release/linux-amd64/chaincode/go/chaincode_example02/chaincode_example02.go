@@ -1,615 +1,197 @@
+/*
+Copyright IBM Corp. 2016 All Rights Reserved.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+		 http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package main
+
+//WARNING - this chaincode's ID is hard-coded in chaincode_example04 to illustrate one way of
+//calling chaincode from a chaincode. If this example is modified, chaincode_example04.go has
+//to be modified as well with the new ID of chaincode_example02.
+//chaincode_example05 show's how chaincode ID can be passed in as a parameter instead of
+//hard-coding.
 
 import (
 	"fmt"
-	"github.com/hyperledger/fabric/core/chaincode/shim"
-	"encoding/json"
-	"math/rand"
 	"strconv"
+
+	"github.com/hyperledger/fabric/core/chaincode/shim"
 	pb "github.com/hyperledger/fabric/protos/peer"
 )
 
-var logger = shim.NewLogger("CLDChaincode")
-
+// SimpleChaincode example simple Chaincode implementation
 type SimpleChaincode struct {
 }
 
-type Purchase_Order struct {
-	PoId            string	`json:"PoId"`
-	Quantity        int	    `json:"Quantity"`
-	Part_Name       string	`json:"Part_Name"`
-	Customer        string	`json:"Customer"`
-	Supplier        string	`json:"Supplier"`
-	Status          string	`json:"Status"`
-	Price           string	`json:"Price"`
-}
+func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
+	fmt.Println("ex02 Init")
+	_, args := stub.GetFunctionAndParameters()
+	var A, B string    // Entities
+	var Aval, Bval int // Asset holdings
+	var err error
 
-type PoId_Holder struct {
-	Po 	[]string	`json:"pos"`
-}
-
-func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response  {
-
-	fmt.Println("blockchain init method")
-	var PoIds PoId_Holder
-	bytes, err := json.Marshal(PoIds)
-	if err != nil {
-	 	return shim.Error("Error creating PoId_Holder record")
+	if len(args) != 4 {
+		return shim.Error("Incorrect number of arguments. Expecting 4")
 	}
-	err = stub.PutState("PoIds", bytes)
+
+	// Initialize the chaincode
+	A = args[0]
+	Aval, err = strconv.Atoi(args[1])
+	if err != nil {
+		return shim.Error("Expecting integer value for asset holding")
+	}
+	B = args[2]
+	Bval, err = strconv.Atoi(args[3])
+	if err != nil {
+		return shim.Error("Expecting integer value for asset holding")
+	}
+	fmt.Printf("Aval = %d, Bval = %d\n", Aval, Bval)
+
+	// Write the state to the ledger
+	err = stub.PutState(A, []byte(strconv.Itoa(Aval)))
 	if err != nil {
 		return shim.Error(err.Error())
 	}
+
+	err = stub.PutState(B, []byte(strconv.Itoa(Bval)))
+	if err != nil {
+		return shim.Error(err.Error())
+	}
+
 	return shim.Success(nil)
-}
-
-
-func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface) pb.Response {
-
-	fmt.Println("blockchain query method###")
-	function, args := stub.GetFunctionAndParameters()
-	if function != "invoke" {
-                return shim.Error("Unknown function call")
-	}
-	fmt.Println("method is "+args[0])
-  if args[0] == "queryPO" {
-		// Queries a purchase order in its state
-		return t.queryPurchaseOrder(stub, args)
-	}
-	if args[0] == "queryPOIds" {
-		//Queries the list of POIds
-		return t.queryPurchaseOrderList(stub, args)
-	}
-	if args[0] == "queryAllPO" {
-		//Queries the list of POIds
-		return t.queryAllPurchaseOrders(stub, args)
-	}
-  return shim.Error("Unknown Query Method")
 }
 
 func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
-
-	fmt.Println("blockchain invoke method###")
+	fmt.Println("ex02 Invoke")
 	function, args := stub.GetFunctionAndParameters()
-	if function != "invoke" {
-                return shim.Error("Unknown function call")
-	}
-	fmt.Println("method is "+args[0])
-	if args[0] == "deletePO" {
-		// Deletes a purchase order from its statell
+	if function == "invoke" {
+		// Make payment of X units from A to B
+		return t.invoke(stub, args)
+	} else if function == "delete" {
+		// Deletes an entity from its state
 		return t.delete(stub, args)
+	} else if function == "query" {
+		// the old "Query" is now implemtned in invoke
+		return t.query(stub, args)
 	}
-	if args[0] == "queryPO" {
-		// Queries a purchase order in its state
-		return t.queryPurchaseOrder(stub, args)
-	}
-	if args[0] == "queryPOIds" {
-		//Queries the list of POIds
-		return t.queryPurchaseOrderList(stub, args)
-	}
-	if args[0] == "queryAllPO" {
-		//Queries the list of POIds
-		return t.queryAllPurchaseOrders(stub, args)
-	}
-	if args[0] == "createPO" {
-		// Creates a purchase order in its state
-		return t.createPO(stub, args)
-	}
-	if args[0] == "createCompletePO" {
-		// Creates a complete purchase order from its state
-		return t.createCompletePO(stub, args)
-	}
-	if args[0] == "addProductPrice" {
-		// Deletes a purchase order from its statell
-		return t.addProductPrice(stub, args)
-	}
-	if args[0] == "updateStatus" {
-		// Updates the status of a purchase order in its state
-		return t.updateStatus(stub, args)
-	}
-	if args[0] == "updatePrice" {
-		// Updates the status of a purchase order in its state
-		return t.updatePrice(stub, args)
-	}
-	if args[0] == "updateQuantity" {
-		// Updates the quantity of a purchase order in its state
-		return t.updateQuantity(stub, args)
-	}
-	if args[0] == "updatePartName" {
-		// Updates the part name of a purchase order in its state
-		return t.updatePartName(stub, args)
-	}
-	if args[0] == "updateSupplier" {
-		// Updates the supplier of a purchase order in its state
-		return t.updateSupplier(stub, args)
-	}
-	if args[0] == "updateCustomer" {
-		// Updates the customer of a purchase order in its state
-		return t.updateCustomer(stub, args)
-	}
-	/*if args[0] == "initialize" {
-		// Updates the status of a purchase order in its state
-		return t.defaultinit(stub, args)
-	}*/
-	return shim.Error("Unknown Invoke Method")
+
+	return shim.Error("Invalid invoke function name. Expecting \"invoke\" \"delete\" \"query\"")
 }
 
-func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface) pb.Response {
+// Transaction makes payment of X units from A to B
+func (t *SimpleChaincode) invoke(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	var A, B string    // Entities
+	var Aval, Bval int // Asset holdings
+	var X int          // Transaction value
+	var err error
 
-	return shim.Error("Query has been implemented in invoke")
-}
-
-//Update the status of a purchase order
-func (t *SimpleChaincode) updateStatus(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	var poid string // Entities
 	if len(args) != 3 {
 		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
-	poid = args[1]
-	// Query the purchase order from the state in ledger
-	bytes, err := stub.GetState(poid)
-	if err != nil {
-		return shim.Error("Unable to get the purchase order")
-	}
-	var po Purchase_Order
-	err = json.Unmarshal(bytes, &po)
-	if err != nil {
-		return shim.Error("Error while unmarshalling JSON object")
-	}
-	po.Status = args[2]
-	resp  := t.save_order(stub, po)
-	if resp != true {
-		fmt.Println("UPDATE_PO: Error saving changes: %s", resp);
-		return shim.Error("Error saving changes")
-	}
-	return shim.Success([]byte("Successfully updated status of order"+args[1]+" to "+args[2]))
-}
 
-//Update Quantity of Purchase Order
-func (t *SimpleChaincode) updateQuantity(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	A = args[0]
+	B = args[1]
 
-	var poid string // Entities
-	if len(args) != 3 {
-		return shim.Error("Incorrect number of arguments. Expecting 3")
-	}
-	poid = args[1]
-	// Query the purchase order from the state in ledger
-	bytes, err := stub.GetState(poid)
+	// Get the state from the ledger
+	// TODO: will be nice to have a GetAllState call to ledger
+	Avalbytes, err := stub.GetState(A)
 	if err != nil {
-		return shim.Error("Unable to get the purchase order")
+		return shim.Error("Failed to get state")
 	}
-	var po Purchase_Order
-	err = json.Unmarshal(bytes, &po)
-	if err != nil {
-		return shim.Error("Error while unmarshalling JSON object")
+	if Avalbytes == nil {
+		return shim.Error("Entity not found")
 	}
-	temp,err := strconv.Atoi(args[2])
-	if err != nil {
-		return shim.Error("The entered value is not an integer")
-	}
-	if temp < 0 {
-		return shim.Error("The entered value has to be positive")
-	}
-	po.Quantity = temp
-	resp  := t.save_order(stub, po)
-	if resp != true {
-		fmt.Println("UPDATE_PO: Error saving changes: %s", resp);
-		return shim.Error("Error saving changes")
-	}
-	return shim.Success([]byte("Successfully updated quantity of order"+args[1]+" to "+args[2]))
-}
+	Aval, _ = strconv.Atoi(string(Avalbytes))
 
-//Update Customer of Purchase Order
-func (t *SimpleChaincode) updateCustomer(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	Bvalbytes, err := stub.GetState(B)
+	if err != nil {
+		return shim.Error("Failed to get state")
+	}
+	if Bvalbytes == nil {
+		return shim.Error("Entity not found")
+	}
+	Bval, _ = strconv.Atoi(string(Bvalbytes))
 
-	var poid string // Entities
-	if len(args) != 3 {
-		return shim.Error("Incorrect number of arguments. Expecting 3")
-	}
-	poid = args[1]
-	// Query the purchase order from the state in ledger
-	bytes, err := stub.GetState(poid)
+	// Perform the execution
+	X, err = strconv.Atoi(args[2])
 	if err != nil {
-		return shim.Error("Unable to get the purchase order")
+		return shim.Error("Invalid transaction amount, expecting a integer value")
 	}
-	var po Purchase_Order
-	err = json.Unmarshal(bytes, &po)
-	if err != nil {
-		return shim.Error("Error while unmarshalling JSON object")
-	}
-	po.Customer = args[2]
-	resp  := t.save_order(stub, po)
-	if resp != true {
-		fmt.Println("UPDATE_PO: Error saving changes: %s", resp);
-		return shim.Error("Error saving changes")
-	}
-	return shim.Success([]byte("Successfully updated customer of order"+args[1]+" to "+args[2]))
-}
+	Aval = Aval - X
+	Bval = Bval + X
+	fmt.Printf("Aval = %d, Bval = %d\n", Aval, Bval)
 
-//Update Price of Purchase Order
-func (t *SimpleChaincode) updatePrice(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	var poid string // Entities
-	if len(args) != 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2. Price for an item is stored in the system")
-	}
-	poid = args[1]
-	// Query the purchase order from the state in ledger
-	bytes, err := stub.GetState(poid)
+	// Write the state back to the ledger
+	err = stub.PutState(A, []byte(strconv.Itoa(Aval)))
 	if err != nil {
-		return shim.Error("Unable to get the purchase order")
-	}
-	var po Purchase_Order
-	err = json.Unmarshal(bytes, &po)
-	if err != nil {
-		return shim.Error("Error while unmarshalling JSON object")
-	}
-	pricebytes, err := stub.GetState(po.Part_Name)
-	if err != nil {
-		return shim.Error("Unable to get state")
-	}
-	if pricebytes == nil {
-		return shim.Error("The price of the product has not been set")
-	}
-	fmt.Println("The price of the product "+po.Part_Name+" is "+string(pricebytes))
-	pricevalue := string(pricebytes)
-	po.Price = pricevalue
-	fmt.Println("The price updated is "+string(pricebytes))
-	resp  := t.save_order(stub, po)
-	if resp != true {
-		fmt.Println("UPDATE_PO: Error saving changes: %s", resp);
-		return shim.Error("Error saving changes")
-	}
-	return shim.Success([]byte("Successfully updated price of product"+args[1]+" to "+po.Price))
-}
-
-//Add product and its price to the world state
-func (t *SimpleChaincode) addProductPrice(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	var productname string // Entities
-	if len(args) != 3 {
-		return shim.Error("Incorrect number of arguments. Expecting 3.")
-	}
-	productname = args[1]
-	price := args[2]
-	err := stub.PutState(productname, []byte(price))
-	if err != nil {
-		fmt.Println("SAVE_CHANGES: Error storing product price record: %s", err)
-		return shim.Error("Could not store product and price")
-	}
-	return shim.Success([]byte("Successfully added product "+args[1]+" of price "+args[2]))
-}
-
-//Update Supplier of Purchase Order
-func (t *SimpleChaincode) updateSupplier(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	var poid string // Entities
-	if len(args) != 3 {
-		return shim.Error("Incorrect number of arguments. Expecting 3")
-	}
-	poid = args[1]
-	// Query the purchase order from the state in ledger
-	bytes, err := stub.GetState(poid)
-	if err != nil {
-		return shim.Error("Unable to get the purchase order")
-	}
-	var po Purchase_Order
-	err = json.Unmarshal(bytes, &po)
-	if err != nil {
-		return shim.Error("Error while unmarshalling JSON object")
-	}
-	po.Supplier = args[2]
-	resp  := t.save_order(stub, po)
-	if resp != true {
-		fmt.Println("UPDATE_PO: Error saving changes: %s", resp);
-		return shim.Error("Error saving changes")
-	}
-	return shim.Success([]byte("Successfully updated supplier of order"+args[1]+" to "+args[2]))
-}
-
-//Update part name of purchase order
-func (t *SimpleChaincode) updatePartName(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	var poid string // Entities
-	if len(args) != 3 {
-		return shim.Error("Incorrect number of arguments. Expecting 3")
-	}
-	poid = args[1]
-	// Query the purchase order from the state in ledger
-	bytes, err := stub.GetState(poid)
-	if err != nil {
-		return shim.Error("Unable to get the purchase order")
-	}
-	var po Purchase_Order
-	err = json.Unmarshal(bytes, &po)
-	if err != nil {
-		return shim.Error("Error while unmarshalling JSON object")
-	}
-	po.Part_Name = args[2]
-	resp  := t.save_order(stub, po)
-	if resp != true {
-		fmt.Println("UPDATE_PO: Error saving changes: %s", resp);
-		return shim.Error("Error saving changes")
-	}
-	return shim.Success([]byte("Successfully updated part name of order"+args[1]+" to "+args[2]))
-}
-
-//Stores the purchase order provided in json format
-func (t *SimpleChaincode) save_order(stub shim.ChaincodeStubInterface, po Purchase_Order) bool {
-
-	fmt.Println("Saving the new purchase order")
-	fmt.Println("The price is "+po.Price)
-	bytes, err := json.Marshal(po)
-	if err != nil {
-		fmt.Println("SAVE_CHANGES: Error converting purchase order record: %s", err)
-		return false
-	}
-	err = stub.PutState(po.PoId, bytes)
-	if err != nil {
-		fmt.Println("SAVE_CHANGES: Error storing purchase order record: %s", err)
-		return false
-	}
-	return true
-}
-
-//Creates a purchase order in the blockchain
-func (t *SimpleChaincode) createPO(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	fmt.Println("Creating a new purchase order")
-	//poid := t.generatePoid()
-	poid := args[1]
-	po := Purchase_Order{
-		PoId: poid,
-		Quantity: 0,
-		Part_Name: "UNDEFINED",
-		Customer: "UNDEFINED",
-		Supplier: "UNDEFINED",
-		Status: "UNDEFINED",
-		Price: "UNDEFINED",
-	}
-	record, err := stub.GetState(po.PoId)
-	if record != nil {
-		 return shim.Error("Purchase Order already exists")
-	}
-	resp  := t.save_order(stub, po)
-	if resp != true {
-		fmt.Println("CREATE_PO: Error saving changes: %s", resp);
-		return shim.Error("Error saving changes")
-	}
-	bytes, err := stub.GetState("PoIds")
-	if err != nil {
-		return shim.Error("Unable to get PoId Holder")
-	}
-	var PoIds PoId_Holder
-	err = json.Unmarshal(bytes, &PoIds)
-	if err != nil {
-		return shim.Error("Corrupt PoId_Holder record")
-	}
-	PoIds.Po = append(PoIds.Po, poid)
-	bytes, err = json.Marshal(PoIds)
-	if err != nil {
-	 	fmt.Println("Error creating PoId_Holder record")
-	}
-	err = stub.PutState("PoIds", bytes)
-	if err != nil {
-		return shim.Error("Unable to put the state")
-	}
-	fmt.Println("Successfully created PO with ID"+poid)
-	return shim.Success([]byte(poid))
-}
-
-//Creates a fully defined purchase order in the blockchain
-func (t *SimpleChaincode) createCompletePO(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	fmt.Println("Creating a new purchase order")
-	if len(args) != 8 {
-		return shim.Error("Incorrect number of arguments. Expecting 8")
-	}
-	//poid := t.generatePoid()
-	poid := args[1]
-	quantity,err := strconv.Atoi(args[2])
-	if err != nil {
-		return shim.Error("The entered value is not an integer")
-	}
-	if quantity < 0 {
-		return shim.Error("The entered value has to be positive")
-	}
-	part := args[3]
-	customer := args[4]
-	supplier := args[5]
-	status := args[6]
-	price := args[7]
-	po := Purchase_Order{
-		PoId: poid,
-		Quantity: quantity,
-		Part_Name: part,
-		Customer: customer,
-		Supplier: supplier,
-		Status: status,
-		Price: price,
-	}
-	record, err := stub.GetState(po.PoId)
-	if record != nil {
-		 return shim.Error("Purchase Order already exists")
-	}
-	resp  := t.save_order(stub, po)
-	if resp != true {
-		fmt.Println("CREATE_PO: Error saving changes: %s", resp);
-		return shim.Error("Error saving changes")
-	}
-	bytes, err := stub.GetState("PoIds")
-	if err != nil {
-		return shim.Error("Unable to get PoId Holder")
-	}
-	var PoIds PoId_Holder
-	err = json.Unmarshal(bytes, &PoIds)
-	if err != nil {
-		return shim.Error("Corrupt PoId_Holder record")
-	}
-	PoIds.Po = append(PoIds.Po, poid)
-	bytes, err = json.Marshal(PoIds)
-	if err != nil {
-	 	fmt.Println("Error creating PoId_Holder record")
-	}
-	err = stub.PutState("PoIds", bytes)
-	if err != nil {
-		return shim.Error("Unable to put the state")
-	}
-	fmt.Println("Successfully created PO with ID"+poid)
-	return shim.Success([]byte(poid))
-}
-
-//Deletes a purchase order from the block chain
-func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	if len(args) != 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
+		return shim.Error(err.Error())
 	}
 
-	poid := args[1]
-
-	// Delete the key from the state in ledger
-	err := stub.DelState(poid)
+	err = stub.PutState(B, []byte(strconv.Itoa(Bval)))
 	if err != nil {
-		return shim.Error("Failed to delete state")
-	}
-	bytes, err := stub.GetState("PoIds")
-	if err != nil {
-		return shim.Error("Unable to get PoIds")
-	}
-	var PoIds PoId_Holder
-	err = json.Unmarshal(bytes, &PoIds)
-	if err != nil {
-		return shim.Error("Corrupt PoId_Holder record")
+		return shim.Error(err.Error())
 	}
 
-	var index int
-	//Find the index at which the current purchase order id exists in the array
-	for i:=0;i<len(PoIds.Po);i++ {
-		if PoIds.Po[i] == poid {
-			index = i
-			break
-		}
-	}
-	temp_po := PoIds.Po
-	temp_po = append(temp_po[:index], temp_po[index+1:]...)
-	PoIds.Po = temp_po
-	bytes, err = json.Marshal(PoIds)
-	if err != nil {
-	 	fmt.Println("Error creating PoId_Holder record")
-	}
-	err = stub.PutState("PoIds", bytes)
-	if err != nil {
-		return shim.Error("Unable to put the state")
-	}
-	fmt.Println("Successfully deleted PO with id"+poid)
 	return shim.Success(nil)
 }
 
-//Query the entire list of purchase order ids
-func (t *SimpleChaincode) queryPurchaseOrderList(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+// Deletes an entity from state
+func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	if len(args) != 1 {
+		return shim.Error("Incorrect number of arguments. Expecting 1")
+	}
 
-	fmt.Println("Inside the queryPurchaseOrderList")
-	bytes, err := stub.GetState("PoIds")
+	A := args[0]
+
+	// Delete the key from the state in ledger
+	err := stub.DelState(A)
 	if err != nil {
-		return shim.Error("Unable to get PoIds")
+		return shim.Error("Failed to delete state")
 	}
-	var PoIds PoId_Holder
-	err = json.Unmarshal(bytes, &PoIds)
-	if err != nil {
-		return shim.Error("Corrupt PoId_Holder record")
-	}
-	temp_po := PoIds.Po
-	var temp string
-	temp = ""
-	for i:=0;i<len(temp_po);i++ {
-		temp += temp_po[i]+","
-	}
-	return shim.Success([]byte(temp))
+
+	return shim.Success(nil)
 }
 
-func (t *SimpleChaincode) queryAllPurchaseOrders(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+// query callback representing the query of a chaincode
+func (t *SimpleChaincode) query(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	var A string // Entities
+	var err error
 
-	fmt.Println("Inside the queryAllPurchaseOrders")
-	bytes, err := stub.GetState("PoIds")
+	if len(args) != 1 {
+		return shim.Error("Incorrect number of arguments. Expecting name of the person to query")
+	}
+
+	A = args[0]
+
+	// Get the state from the ledger
+	Avalbytes, err := stub.GetState(A)
 	if err != nil {
-		return shim.Error("Unable to get PoIds")
+		jsonResp := "{\"Error\":\"Failed to get state for " + A + "\"}"
+		return shim.Error(jsonResp)
 	}
-	var PoIds PoId_Holder
-	err = json.Unmarshal(bytes, &PoIds)
-	if err != nil {
-		return shim.Error("Corrupt PoId_Holder record")
-	}
-	temp_po := PoIds.Po
-	var temp string
-	temp = ""
-	for i:=0;i<len(temp_po);i++ {
-		bytes, err := stub.GetState(temp_po[i])
-		if err != nil {
-			return shim.Error("Unable to get the purchase order")
-		}
-		var po Purchase_Order
-		err = json.Unmarshal(bytes,&po)
-		if err != nil {
-			fmt.Println("The record is corrupt")
-			return shim.Error("Unable to unmarshal purchase order")
-		}
-		po_details,err := json.Marshal(po)
-		if err != nil {
-			return shim.Error("Unable to marshal the unmarshaled purchase order")
-		}
-		temp += "*************************************\n"
-		temp += string(po_details)
-		temp += "\n"
-	}
-	temp += "*************************************\n"
-	return shim.Success([]byte(temp))
-}
 
-
-//Query based on a purchase order ID
-func (t *SimpleChaincode) queryPurchaseOrder(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	fmt.Println("Inside the queryPurchaseOrder")
-	var poid string // Entities
-	if len(args) != 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
+	if Avalbytes == nil {
+		jsonResp := "{\"Error\":\"Nil amount for " + A + "\"}"
+		return shim.Error(jsonResp)
 	}
-	poid = args[1]
-	// Query the purchase order from the state in ledger
-	bytes, err := stub.GetState(poid)
-	if err != nil {
-		return shim.Error("Unable to get the purchase order")
-	}
-	var po Purchase_Order
-	err = json.Unmarshal(bytes,&po)
-	if err != nil {
-		fmt.Println("The record is corrupt")
-		return shim.Error("Unable to unmarshal purchase order")
-	}
-	po_details,err := json.Marshal(po)
-	if err != nil {
-		return shim.Error("Unable to marshal the unmarshaled purchase order")
-	}
-	return shim.Success(po_details)
-}
 
-
-
-//Function to generate random number based purchase order id
-func (t *SimpleChaincode) generatePoid() string {
-
-	poid := ""
-	for i:= 0;i<7;i++ {
-	    poid += strconv.Itoa(rand.Intn(10))
-	}
-	return poid;
+	jsonResp := "{\"Name\":\"" + A + "\",\"Amount\":\"" + string(Avalbytes) + "\"}"
+	fmt.Printf("Query Response:%s\n", jsonResp)
+	return shim.Success(Avalbytes)
 }
 
 func main() {
-
 	err := shim.Start(new(SimpleChaincode))
 	if err != nil {
-		fmt.Println("Error starting Chaincode: %s", err)
+		fmt.Printf("Error starting Simple chaincode: %s", err)
 	}
 }
+
